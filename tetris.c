@@ -29,6 +29,11 @@ typedef struct {
     int total;
 } Pilha;
 
+typedef struct {
+    Peca peca[MAX];
+    int topo;
+} desfazerPeca;
+
 int contador_id = 0; // Variável global para controle do ID das peças
 char tipos[5] = {'I', 'O', 'T', 'L', 'Z'}; // Tipos de peças do Tetris
 
@@ -41,6 +46,10 @@ void inicializarFila(Fila* f) {
 void inicializarPilha(Pilha* p) {
     p->topo = -1;
     p->total = 0;
+}
+
+void inicializarDesfazer(desfazerPeca* d) {
+    d->topo = -1;
 }
 
 // Função para adicionar uma peça à fila circular
@@ -74,8 +83,11 @@ void mostrarFila(Fila* f) {
 }
 
 // Função para remover uma peça da fila circular
-void dequeue(Fila* f) {
+void dequeue(Fila* f, desfazerPeca* d) {
     if (f->total > 0) {
+        Peca pe = f->peca[f->primeiro];
+        // Armazena a peça removida na pilha de desfazer
+        d->peca[++d->topo] = pe;
         f->primeiro = (f->primeiro + 1) % MAX;
         f->total--;
         mostrarFila(f);
@@ -85,12 +97,13 @@ void dequeue(Fila* f) {
 }
 
 // Função para reservar uma peça na pilha
-void push(Pilha* p, Fila* f) {
+void push(Pilha* p, Fila* f, desfazerPeca* d) {
     if (p->total < MAX) {
         p->topo++;
         p->peca[p->topo] = f->peca[f->primeiro];
         p->total++;
-        dequeue(f); // Remove a peça da fila após reservá-la na pilha
+        f->primeiro = (f->primeiro + 1) % MAX; // Remove a peça da fila após reservá-la na pilha
+        f->total--;
     } else {
         printf("Pilha cheia! Não é possível reservar mais peças.\n");
     }
@@ -125,7 +138,56 @@ void pop(Pilha* p) {
     }
 }
 
-void menu(Fila* fila, Pilha* pilha) {
+// Função para trocar a peça da frente da fila com o topo da pilha
+void trocarPeca(Fila* f, Pilha* p) {
+    if (f->total > 0 && p->total > 0) {
+        Peca temp = f->peca[f->primeiro];
+        f->peca[f->primeiro] = p->peca[p->topo];
+        p->peca[p->topo] = temp;
+        printf("Peça da frente da fila trocada com o topo da pilha!\n");
+    } else {
+        printf("Não é possível trocar peças! Verifique se a fila e a pilha têm peças suficientes.\n");
+    }
+}
+
+// Função para desfazer a última jogada (voltar peça para a fila)
+void desfazerJogada(Fila* f, desfazerPeca* d) {
+    if (d->topo >= 0) {
+        Peca temp = d->peca[d->topo];
+        // Desloca as peças na fila para abrir espaço para a peça desfeita
+        for (int i = MAX - 1 ; i >= 0 ; i--) {
+            f->peca[(f->primeiro + i) % MAX] = f->peca[(f->primeiro + i - 1) % MAX];
+        }
+        f->peca[f->primeiro] = temp;
+        d->topo--;
+        printf("Última jogada desfeita! Peça retornada para a fila.\n");
+    } else {
+        printf("Não há jogadas para desfazer!\n");
+    }
+}
+
+// Função para inverter a fila de peças futuras
+void inverterFila(Fila* f) {
+    if (f->total > 0) {
+        desfazerPeca temp;
+        temp.topo = -1; // Inicializa o topo da pilha temporária
+        for (int i = 0; i < f->total; i++) {
+            int index = (f->primeiro + i) % MAX;
+            temp.peca[i] = f->peca[index];
+            temp.topo++;
+        }
+        for (int i = 0; i < f->total; i++) {
+            int index = (f->primeiro + i) % MAX;
+            f->peca[index] = temp.peca[temp.topo];
+            temp.topo--;
+        }
+        printf("Fila de peças futuras invertida!\n");
+    } else {
+        printf("Fila vazia! Não há peças para inverter.\n");
+    }
+}
+
+void menu(Fila* fila, Pilha* pilha, desfazerPeca* desfazer) {
 
 
     int opcao;
@@ -143,6 +205,9 @@ void menu(Fila* fila, Pilha* pilha) {
     printf("1 - Jogar peça\n");
     printf("2 - Reservar peça\n");
     printf("3 - Usar peça reservada\n");
+    printf("4 - Trocar peça da frente com topo da pilha\n");
+    printf("5 - desfazer a última jogada (voltar peça para a fila)\n");
+    printf("6 - inverter a fila de peças futuras\n");
     printf("0 - Sair\n");
     printf("---------------------\n");
     printf("Escolha uma opção: \n");
@@ -154,16 +219,28 @@ void menu(Fila* fila, Pilha* pilha) {
     {
     case 1:
          // Lógica para jogar peça
-        dequeue(fila);
+        dequeue(fila, desfazer);
         break;
     case 2:
         // Lógica para reservar peça
-        push(pilha, fila);
+        push(pilha, fila, desfazer);
         mostrarPilha(pilha);
         break;
     case 3:
         // Lógica para usar peça reservada
         pop(pilha);
+        break;
+    case 4:
+        // Lógica para trocar peça da frente com topo da pilha
+        trocarPeca(fila, pilha);
+        break;
+    case 5:
+        // Lógica para desfazer a última jogada (voltar peça para a fila)
+        desfazerJogada(fila, desfazer);
+        break;
+    case 6:
+        // Lógica para inverter a fila de peças futuras
+        inverterFila(fila);
         break;
     case 0:
         printf("Saindo...\n");
@@ -185,36 +262,19 @@ int main() {
     srand(time(NULL)); // Inicializa a semente para geração de peças aleatórias
     setlocale(LC_ALL, ".UTF-8"); // Configura a localidade para UTF-8
     
-    // 🧠 Nível Aventureiro: Adição da Pilha de Reserva
+    // 🔄 Nível Mestre: Integração Estratégica entre Fila e Pilha
     Fila fila;
     inicializarFila(&fila);
     Pilha pilha;
     inicializarPilha(&pilha);
+    desfazerPeca desfazer;
+    inicializarDesfazer(&desfazer);
     
     printf("================================\n");
     printf("Bem vindo ao Tretis Stack!\n");
     printf("================================\n");
 
-    menu(&fila, &pilha);
-
-
-    // 🔄 Nível Mestre: Integração Estratégica entre Fila e Pilha
-    //
-    // - Implemente interações avançadas entre as estruturas:
-    //      4 - Trocar a peça da frente da fila com o topo da pilha
-    //      5 - Trocar os 3 primeiros da fila com as 3 peças da pilha
-    // - Para a opção 4:
-    //      Verifique se a fila não está vazia e a pilha tem ao menos 1 peça.
-    //      Troque os elementos diretamente nos arrays.
-    // - Para a opção 5:
-    //      Verifique se a pilha tem exatamente 3 peças e a fila ao menos 3.
-    //      Use a lógica de índice circular para acessar os primeiros da fila.
-    // - Sempre valide as condições antes da troca e informe mensagens claras ao usuário.
-    // - Use funções auxiliares, se quiser, para modularizar a lógica de troca.
-    // - O menu deve ficar assim:
-    //      4 - Trocar peça da frente com topo da pilha
-    //      5 - Trocar 3 primeiros da fila com os 3 da pilha
-
+    menu(&fila, &pilha, &desfazer);
 
     return 0;
 }
